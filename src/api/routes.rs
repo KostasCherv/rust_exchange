@@ -1,19 +1,34 @@
 use axum::{extract::{Path, Query, State}, http::StatusCode, response::Json, Router, routing::{delete, get, post}};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
+use tokio::sync::broadcast;
 use uuid::Uuid;
 
+use crate::api::ws::ws_handler;
 use crate::types::order::{Order, OrderSide};
 use crate::types::trade::Trade;
 use crate::orderbook::orderbook::SharedOrderBook;
+
+// WebSocket message type for broadcasting
+#[derive(Debug, Clone, Serialize)]
+#[serde(tag = "type")]
+pub enum WsMessage {
+    OrderBookUpdate {
+        symbol: String,
+        bids: Vec<(i64, u64)>,
+        asks: Vec<(i64, u64)>,
+    },
+    Trade {
+        symbol: String,
+        trade: Trade,
+    },
+}
 
 // Application state containing all shared resources
 #[derive(Clone)]
 pub struct AppState {
     pub orderbooks: HashMap<String, SharedOrderBook>,
-    // Add more shared resources here as needed:
-    // pub users: SharedUserManager,
-    // pub accounts: SharedAccountManager,
+    pub ws_channel: broadcast::Sender<WsMessage>,
 }
 
 // Error response structure
@@ -192,5 +207,6 @@ pub fn app_router(state: AppState) -> Router {
         .route("/orders/{id}", get(get_order))
         .route("/book", get(get_order_book))
         .route("/trades", get(get_trades))
+        .route("/ws", get(ws_handler))
         .with_state(state)
 }

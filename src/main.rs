@@ -2,7 +2,7 @@ use rust_exchange::api::routes::{app_router, AppState};
 use rust_exchange::orderbook::orderbook::{OrderBook, SharedOrderBook};
 use std::collections::HashMap;
 use std::sync::Arc;
-use tokio::sync::RwLock;
+use tokio::sync::{broadcast, RwLock};
 
 #[tokio::main]
 async fn main() {
@@ -20,11 +20,12 @@ async fn main() {
         Arc::new(RwLock::new(OrderBook::new())),
     );
 
+    // Initialize WebSocket broadcast channel
+    let (ws_tx, _) = broadcast::channel::<rust_exchange::api::routes::WsMessage>(1000);
+
     let app_state = AppState {
         orderbooks,
-        // Add more shared resources here as needed:
-        // users: Arc::new(RwLock::new(UserManager::new())),
-        // accounts: Arc::new(RwLock::new(AccountManager::new())),
+        ws_channel: ws_tx,
     };
 
     let app = app_router(app_state);
