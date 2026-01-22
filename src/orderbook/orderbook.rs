@@ -20,6 +20,12 @@ pub struct OrderBook {
     trades: VecDeque<Trade>,
 }
 
+impl Default for OrderBook {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl OrderBook {
     pub fn new() -> Self {
         Self {
@@ -73,12 +79,12 @@ impl OrderBook {
             match matched_order.side {
                 OrderSide::Buy => {
                     self.bids.entry(matched_order.price)
-                        .or_insert_with(VecDeque::new)
+                        .or_default()
                         .push_back(order_id);
                 }
                 OrderSide::Sell => {
                     self.asks.entry(matched_order.price)
-                        .or_insert_with(VecDeque::new)
+                        .or_default()
                         .push_back(order_id);
                 }
             }
@@ -94,9 +100,7 @@ impl OrderBook {
     }
 
     pub fn best_bid(&self) -> Option<Price> {
-        self.bids.iter()
-            .rev()
-            .next()
+        self.bids.iter().next_back()
             .map(|(&price, _)| price)
     }
 

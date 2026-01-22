@@ -70,13 +70,11 @@ async fn handle_socket(mut socket: WebSocket, state: AppState) {
                         };
 
                         // Only send if client is subscribed to this symbol
-                        if subscribed_symbols.contains(symbol) {
-                            if let Ok(json) = serde_json::to_string(&ws_msg) {
-                                if socket.send(Message::Text(json.into())).await.is_err() {
+                        if subscribed_symbols.contains(symbol)
+                            && let Ok(json) = serde_json::to_string(&ws_msg)
+                                && socket.send(Message::Text(json.into())).await.is_err() {
                                     return;
                                 }
-                            }
-                        }
                     }
                     Err(_) => {
                         // Broadcast channel closed
@@ -124,11 +122,10 @@ async fn handle_socket(mut socket: WebSocket, state: AppState) {
                                 };
                                 
                                 // Send acknowledgment back to client
-                                if let Ok(ack_json) = serde_json::to_string(&ack) {
-                                    if socket.send(Message::Text(ack_json.into())).await.is_err() {
+                                if let Ok(ack_json) = serde_json::to_string(&ack)
+                                    && socket.send(Message::Text(ack_json.into())).await.is_err() {
                                         return;
                                     }
-                                }
                             }
                             Err(_) => {
                                 // Invalid JSON - send error acknowledgment
