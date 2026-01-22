@@ -1,14 +1,27 @@
 use rust_exchange::api::routes::{app_router, AppState};
 use rust_exchange::orderbook::orderbook::{OrderBook, SharedOrderBook};
+use std::collections::HashMap;
 use std::sync::Arc;
 use tokio::sync::RwLock;
 
 #[tokio::main]
 async fn main() {
-    let orderbook: SharedOrderBook = Arc::new(RwLock::new(OrderBook::new()));
+    let mut orderbooks: HashMap<String, SharedOrderBook> = HashMap::new();
+
+    // Initialize BTCUSDT orderbook
+    orderbooks.insert(
+        "BTCUSDT".to_string(),
+        Arc::new(RwLock::new(OrderBook::new())),
+    );
+
+    // Initialize ETHUSDT orderbook
+    orderbooks.insert(
+        "ETHUSDT".to_string(),
+        Arc::new(RwLock::new(OrderBook::new())),
+    );
 
     let app_state = AppState {
-        orderbook,
+        orderbooks,
         // Add more shared resources here as needed:
         // users: Arc::new(RwLock::new(UserManager::new())),
         // accounts: Arc::new(RwLock::new(AccountManager::new())),
