@@ -2,8 +2,8 @@ use uuid::Uuid;
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 
-type Price = i64;
-type Qty = u64;
+use crate::types::order::{Price, Qty};
+
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Trade {
     pub id: Uuid,
