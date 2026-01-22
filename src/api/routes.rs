@@ -1,13 +1,19 @@
-use axum::{extract::{Path, Query, State}, http::StatusCode, response::Json, Router, routing::{delete, get, post}};
+use axum::{
+    Router,
+    extract::{Path, Query, State},
+    http::StatusCode,
+    response::Json,
+    routing::{delete, get, post},
+};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use tokio::sync::broadcast;
 use uuid::Uuid;
 
 use crate::api::ws::ws_handler;
+use crate::orderbook::orderbook::SharedOrderBook;
 use crate::types::order::{Order, OrderSide};
 use crate::types::trade::Trade;
-use crate::orderbook::orderbook::SharedOrderBook;
 
 // WebSocket message type for broadcasting
 #[derive(Debug, Clone, Serialize)]
@@ -51,7 +57,10 @@ impl ErrorResponse {
 }
 
 // Helper function to get orderbook by symbol
-fn get_orderbook(state: &AppState, symbol: &str) -> Result<SharedOrderBook, (StatusCode, Json<ErrorResponse>)> {
+fn get_orderbook(
+    state: &AppState,
+    symbol: &str,
+) -> Result<SharedOrderBook, (StatusCode, Json<ErrorResponse>)> {
     let normalized_symbol = symbol.to_uppercase();
     state
         .orderbooks

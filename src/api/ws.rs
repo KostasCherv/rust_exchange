@@ -1,7 +1,7 @@
 use axum::{
     extract::{
-        ws::{Message, WebSocket, WebSocketUpgrade},
         State,
+        ws::{Message, WebSocket, WebSocketUpgrade},
     },
     response::Response,
 };
@@ -45,10 +45,7 @@ struct SubscriptionAck {
 }
 
 // WebSocket handler - accepts upgrade and handles the connection
-pub async fn ws_handler(
-    ws: WebSocketUpgrade,
-    State(state): State<AppState>,
-) -> Response {
+pub async fn ws_handler(ws: WebSocketUpgrade, State(state): State<AppState>) -> Response {
     ws.on_upgrade(move |socket| handle_socket(socket, state))
 }
 
@@ -90,10 +87,10 @@ async fn handle_socket(mut socket: WebSocket, state: AppState) {
                         match serde_json::from_str::<SubscriptionMessage>(&text) {
                             Ok(sub_msg) => {
                                 let normalized_symbol = sub_msg.symbol.to_uppercase();
-                                
+
                                 // Validate symbol exists
                                 let symbol_exists = state.orderbooks.contains_key(&normalized_symbol);
-                                
+
                                 let ack = match sub_msg.action {
                                     SubscriptionAction::Subscribe => {
                                         if symbol_exists {
@@ -120,7 +117,7 @@ async fn handle_socket(mut socket: WebSocket, state: AppState) {
                                         }
                                     }
                                 };
-                                
+
                                 // Send acknowledgment back to client
                                 if let Ok(ack_json) = serde_json::to_string(&ack)
                                     && socket.send(Message::Text(ack_json.into())).await.is_err() {

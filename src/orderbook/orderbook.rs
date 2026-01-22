@@ -1,9 +1,9 @@
-use std::collections::{BTreeMap, HashMap, VecDeque};
-use std::collections::btree_map::Entry;
-use std::sync::Arc;
-use tokio::sync::{broadcast, RwLock};
-use uuid::Uuid;
 use chrono::Utc;
+use std::collections::btree_map::Entry;
+use std::collections::{BTreeMap, HashMap, VecDeque};
+use std::sync::Arc;
+use tokio::sync::{RwLock, broadcast};
+use uuid::Uuid;
 
 use crate::types::order::{Order, OrderId, OrderSide, OrderStatus, OrderType, Price, Qty};
 use crate::types::trade::Trade;
@@ -59,7 +59,7 @@ impl OrderBook {
 
         // Try to match the order first
         let (trades, matched_order) = self.match_order(order);
-        
+
         // Store all trades
         self.store_trades(trades.clone());
 
@@ -71,19 +71,21 @@ impl OrderBook {
         // If there's remaining quantity, add it to the book
         if matched_order.quantity > 0 {
             let order_id = matched_order.id;
-            
+
             // Store order in lookup map
             self.orders.insert(order_id, matched_order.clone());
 
             // Add only OrderId to price level (FIFO queue)
             match matched_order.side {
                 OrderSide::Buy => {
-                    self.bids.entry(matched_order.price)
+                    self.bids
+                        .entry(matched_order.price)
                         .or_default()
                         .push_back(order_id);
                 }
                 OrderSide::Sell => {
-                    self.asks.entry(matched_order.price)
+                    self.asks
+                        .entry(matched_order.price)
                         .or_default()
                         .push_back(order_id);
                 }
@@ -100,16 +102,12 @@ impl OrderBook {
     }
 
     pub fn best_bid(&self) -> Option<Price> {
-        self.bids.iter().next_back()
-            .map(|(&price, _)| price)
+        self.bids.iter().next_back().map(|(&price, _)| price)
     }
 
     pub fn best_ask(&self) -> Option<Price> {
-        self.asks.iter()
-            .next()
-            .map(|(&price, _)| price)
+        self.asks.iter().next().map(|(&price, _)| price)
     }
-
 
     pub fn remove_order(
         &mut self,
@@ -132,7 +130,7 @@ impl OrderBook {
         if let Entry::Occupied(mut entry) = price_levels.entry(price) {
             let queue = entry.get_mut();
             queue.retain(|&oid| oid != order_id);
-            
+
             // If the queue is now empty, remove this price level completely
             if queue.is_empty() {
                 entry.remove();
@@ -153,7 +151,6 @@ impl OrderBook {
     pub fn get_order_by_id(&self, order_id: OrderId) -> Option<Order> {
         self.orders.get(&order_id).cloned()
     }
-
 
     // Match a buy order against asks
     // Iterate through asks from lowest price, match until order filled or no more matches
@@ -186,7 +183,8 @@ impl OrderBook {
                         let match_qty = order.quantity.min(maker_order.quantity);
 
                         // Create trade (maker price = ask price)
-                        let trade = Self::create_trade(maker_order_id, order.id, ask_price, match_qty);
+                        let trade =
+                            Self::create_trade(maker_order_id, order.id, ask_price, match_qty);
                         trades.push(trade);
 
                         // Update incoming order quantity
@@ -197,7 +195,8 @@ impl OrderBook {
                         let mut updated_maker = maker_order;
                         updated_maker.quantity -= match_qty;
                         let maker_original_qty = updated_maker.quantity + match_qty;
-                        updated_maker.status = Self::update_order_status(maker_original_qty, updated_maker.quantity);
+                        updated_maker.status =
+                            Self::update_order_status(maker_original_qty, updated_maker.quantity);
 
                         // If maker order is fully filled, remove it
                         if updated_maker.quantity == 0 {
@@ -231,7 +230,7 @@ impl OrderBook {
         trades
     }
 
-    // Match a sell order against bids  
+    // Match a sell order against bids
     // Iterate through bids from highest price, match until order filled or no more matches
     pub fn match_sell_order(&mut self, order: &mut Order) -> Vec<Trade> {
         let mut trades = Vec::new();
@@ -262,7 +261,8 @@ impl OrderBook {
                         let match_qty = order.quantity.min(maker_order.quantity);
 
                         // Create trade (maker price = bid price)
-                        let trade = Self::create_trade(maker_order_id, order.id, bid_price, match_qty);
+                        let trade =
+                            Self::create_trade(maker_order_id, order.id, bid_price, match_qty);
                         trades.push(trade);
 
                         // Update incoming order quantity
@@ -273,7 +273,8 @@ impl OrderBook {
                         let mut updated_maker = maker_order;
                         updated_maker.quantity -= match_qty;
                         let maker_original_qty = updated_maker.quantity + match_qty;
-                        updated_maker.status = Self::update_order_status(maker_original_qty, updated_maker.quantity);
+                        updated_maker.status =
+                            Self::update_order_status(maker_original_qty, updated_maker.quantity);
 
                         // If maker order is fully filled, remove it
                         if updated_maker.quantity == 0 {
@@ -307,15 +308,14 @@ impl OrderBook {
         trades
     }
 
-
     // Main matching function - processes incoming order and matches with opposite side
     // Returns vector of trades created and the order (with updated quantity/status)
     pub fn match_order(&mut self, mut order: Order) -> (Vec<Trade>, Order) {
         let trades = match order.side {
             OrderSide::Buy => self.match_buy_order(&mut order),
-            OrderSide::Sell => self.match_sell_order(&mut order)
+            OrderSide::Sell => self.match_sell_order(&mut order),
         };
-        
+
         // Always return the order (even if fully filled, quantity will be 0)
         (trades, order)
     }
@@ -326,7 +326,7 @@ impl OrderBook {
         for trade in trades {
             self.trades.push_back(trade);
         }
-        
+
         // Keep only recent trades (limit to last 1000)
         const MAX_TRADES: usize = 1000;
         while self.trades.len() > MAX_TRADES {
@@ -336,12 +336,7 @@ impl OrderBook {
 
     // Get recent trades (most recent first)
     pub fn get_recent_trades(&self, limit: usize) -> Vec<Trade> {
-        self.trades
-            .iter()
-            .rev()
-            .take(limit)
-            .cloned()
-            .collect()
+        self.trades.iter().rev().take(limit).cloned().collect()
     }
 
     // Get all trades (for debugging/testing)
@@ -384,7 +379,12 @@ impl OrderBook {
 
     // Helper: Create a Trade object from matched orders
     // maker = resting order, taker = incoming order, qty = matched quantity
-    fn create_trade(maker_order_id: OrderId, taker_order_id: OrderId, price: Price, qty: Qty) -> Trade {
+    fn create_trade(
+        maker_order_id: OrderId,
+        taker_order_id: OrderId,
+        price: Price,
+        qty: Qty,
+    ) -> Trade {
         Trade {
             id: Uuid::new_v4(),
             maker_order_id,
@@ -406,5 +406,4 @@ impl OrderBook {
             OrderStatus::Pending
         }
     }
-
 }

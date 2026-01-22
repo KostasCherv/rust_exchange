@@ -1,8 +1,8 @@
-use rust_exchange::api::routes::{app_router, AppState};
+use rust_exchange::api::routes::{AppState, app_router};
 use rust_exchange::orderbook::orderbook::{OrderBook, SharedOrderBook};
 use std::collections::HashMap;
 use std::sync::Arc;
-use tokio::sync::{broadcast, RwLock};
+use tokio::sync::{RwLock, broadcast};
 
 #[tokio::main]
 async fn main() {
