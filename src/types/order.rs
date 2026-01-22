@@ -29,7 +29,7 @@ pub struct Order {
     pub side: OrderSide,
     pub order_type: OrderType,
     pub price: i64,
-    pub quantity: i64,
+    pub quantity: u64,
     pub status: OrderStatus,
     pub timestamp: DateTime<Utc>,
 }
