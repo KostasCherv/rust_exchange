@@ -1,11 +1,17 @@
 use std::collections::{BTreeMap, HashMap, VecDeque};
 use std::collections::btree_map::Entry;
+use std::sync::Arc;
+use tokio::sync::RwLock;
 use uuid::Uuid;
 use chrono::Utc;
 
 use crate::types::order::{Order, OrderId, OrderSide, OrderStatus, OrderType, Price, Qty};
 use crate::types::trade::Trade;
+
 type PriceLevel = VecDeque<OrderId>;
+
+// Type alias for shared OrderBook state
+pub type SharedOrderBook = Arc<RwLock<OrderBook>>;
 
 pub struct OrderBook {
     bids: BTreeMap<Price, PriceLevel>,
@@ -83,7 +89,12 @@ impl OrderBook {
     }
 
 
-    pub fn remove_order(&mut self, order_id: OrderId, price: Price, side: OrderSide) {
+    pub fn remove_order(&mut self, order_id: OrderId) -> Option<Order> {
+        // First, get the order to find its price and side
+        let order = self.orders.get(&order_id)?;
+        let price = order.price;
+        let side = order.side;
+
         // Select the correct price level map based on side
         let price_levels = match side {
             OrderSide::Buy => &mut self.bids,
@@ -101,8 +112,12 @@ impl OrderBook {
             }
         }
 
-        // Remove the order from the global order map
-        self.orders.remove(&order_id);
+        // Remove the order from the global order map and return it
+        self.orders.remove(&order_id)
+    }
+
+    pub fn get_order_by_id(&self, order_id: OrderId) -> Option<Order> {
+        self.orders.get(&order_id).cloned()
     }
 
 
@@ -298,6 +313,39 @@ impl OrderBook {
     // Get all trades (for debugging/testing)
     pub fn get_all_trades(&self) -> Vec<Trade> {
         self.trades.iter().cloned().collect()
+    }
+
+    // Get bids as Vec of (price, total_quantity) pairs
+    // Returns highest bid prices first
+    pub fn get_bids(&self) -> Vec<(Price, Qty)> {
+        self.bids
+            .iter()
+            .rev()
+            .map(|(&price, level)| {
+                let total_qty: Qty = level
+                    .iter()
+                    .filter_map(|&order_id| self.orders.get(&order_id))
+                    .map(|order| order.quantity)
+                    .sum();
+                (price, total_qty)
+            })
+            .collect()
+    }
+
+    // Get asks as Vec of (price, total_quantity) pairs
+    // Returns lowest ask prices first
+    pub fn get_asks(&self) -> Vec<(Price, Qty)> {
+        self.asks
+            .iter()
+            .map(|(&price, level)| {
+                let total_qty: Qty = level
+                    .iter()
+                    .filter_map(|&order_id| self.orders.get(&order_id))
+                    .map(|order| order.quantity)
+                    .sum();
+                (price, total_qty)
+            })
+            .collect()
     }
 
     // Helper: Create a Trade object from matched orders
