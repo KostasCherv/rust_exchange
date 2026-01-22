@@ -89,9 +89,18 @@ async fn create_order(
         ));
     }
 
-    let orderbook = get_orderbook(&state, &body.symbol)?;
+    let normalized_symbol = body.symbol.to_uppercase();
+    let orderbook = get_orderbook(&state, &normalized_symbol)?;
     let mut book = orderbook.write().await;
-    let order = book.add_order(body.user_id, body.price, body.quantity, body.side);
+    let order = book.add_order(
+        body.user_id,
+        body.price,
+        body.quantity,
+        body.side,
+        Some(&state.ws_channel),
+        Some(&normalized_symbol),
+    );
+
     Ok(Json(order))
 }
 
@@ -112,9 +121,10 @@ async fn cancel_order(
         ));
     }
 
-    let orderbook = get_orderbook(&state, &params.symbol)?;
+    let normalized_symbol = params.symbol.to_uppercase();
+    let orderbook = get_orderbook(&state, &normalized_symbol)?;
     let mut book = orderbook.write().await;
-    match book.remove_order(order_id) {
+    match book.remove_order(order_id, Some(&state.ws_channel), Some(&normalized_symbol)) {
         Some(_) => Ok(StatusCode::NO_CONTENT),
         None => Err(ErrorResponse::new(
             format!("Order '{}' not found", order_id),

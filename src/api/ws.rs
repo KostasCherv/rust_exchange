@@ -8,9 +8,10 @@ use axum::{
 use serde::{Deserialize, Serialize};
 use serde_json;
 use std::collections::HashSet;
-use tokio::select;
+use tokio::{select, sync::broadcast};
 
 use crate::api::routes::{AppState, WsMessage};
+use crate::types::trade::Trade;
 
 // Subscription action enum
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize)]
@@ -157,4 +158,29 @@ async fn handle_socket(mut socket: WebSocket, state: AppState) {
             }
         }
     }
+}
+
+// Helper function to broadcast trades
+pub fn broadcast_trades(ws_channel: &broadcast::Sender<WsMessage>, symbol: &str, trades: &[Trade]) {
+    for trade in trades {
+        let _ = ws_channel.send(WsMessage::Trade {
+            symbol: symbol.to_string(),
+            trade: trade.clone(),
+        });
+    }
+}
+
+// Helper function to broadcast orderbook update
+pub fn broadcast_orderbook_update(
+    ws_channel: &broadcast::Sender<WsMessage>,
+    symbol: &str,
+    book: &crate::orderbook::orderbook::OrderBook,
+) {
+    let bids = book.get_bids();
+    let asks = book.get_asks();
+    let _ = ws_channel.send(WsMessage::OrderBookUpdate {
+        symbol: symbol.to_string(),
+        bids,
+        asks,
+    });
 }

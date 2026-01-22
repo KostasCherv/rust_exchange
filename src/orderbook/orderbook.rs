@@ -1,7 +1,7 @@
 use std::collections::{BTreeMap, HashMap, VecDeque};
 use std::collections::btree_map::Entry;
 use std::sync::Arc;
-use tokio::sync::RwLock;
+use tokio::sync::{broadcast, RwLock};
 use uuid::Uuid;
 use chrono::Utc;
 
@@ -30,7 +30,15 @@ impl OrderBook {
         }
     }
 
-    pub fn add_order(&mut self, user_id: Uuid, price: Price, qty: Qty, side: OrderSide) -> Order {
+    pub fn add_order(
+        &mut self,
+        user_id: Uuid,
+        price: Price,
+        qty: Qty,
+        side: OrderSide,
+        ws_channel: Option<&broadcast::Sender<crate::api::routes::WsMessage>>,
+        symbol: Option<&str>,
+    ) -> Order {
         // Create the order
         let order = Order {
             id: Uuid::new_v4(),
@@ -47,7 +55,12 @@ impl OrderBook {
         let (trades, matched_order) = self.match_order(order);
         
         // Store all trades
-        self.store_trades(trades);
+        self.store_trades(trades.clone());
+
+        // Broadcast trades if channel is provided
+        if let (Some(channel), Some(sym)) = (ws_channel, symbol) {
+            crate::api::ws::broadcast_trades(channel, sym, &trades);
+        }
 
         // If there's remaining quantity, add it to the book
         if matched_order.quantity > 0 {
@@ -72,6 +85,11 @@ impl OrderBook {
         }
         // If quantity is 0, order is fully filled and already has correct status
 
+        // Broadcast orderbook update if channel is provided
+        if let (Some(channel), Some(sym)) = (ws_channel, symbol) {
+            crate::api::ws::broadcast_orderbook_update(channel, sym, self);
+        }
+
         matched_order
     }
 
@@ -89,7 +107,12 @@ impl OrderBook {
     }
 
 
-    pub fn remove_order(&mut self, order_id: OrderId) -> Option<Order> {
+    pub fn remove_order(
+        &mut self,
+        order_id: OrderId,
+        ws_channel: Option<&broadcast::Sender<crate::api::routes::WsMessage>>,
+        symbol: Option<&str>,
+    ) -> Option<Order> {
         // First, get the order to find its price and side
         let order = self.orders.get(&order_id)?;
         let price = order.price;
@@ -112,8 +135,15 @@ impl OrderBook {
             }
         }
 
-        // Remove the order from the global order map and return it
-        self.orders.remove(&order_id)
+        // Remove the order from the global order map
+        let removed_order = self.orders.remove(&order_id);
+
+        // Broadcast orderbook update if channel is provided
+        if let (Some(channel), Some(sym)) = (ws_channel, symbol) {
+            crate::api::ws::broadcast_orderbook_update(channel, sym, self);
+        }
+
+        removed_order
     }
 
     pub fn get_order_by_id(&self, order_id: OrderId) -> Option<Order> {
