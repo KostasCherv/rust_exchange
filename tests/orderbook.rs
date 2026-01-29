@@ -22,7 +22,15 @@ fn no_match_order_rests() {
     let price = scale_price(50_000);
     let qty = 10u64;
 
-    let (order, trades) = book.add_order(user_id, price, qty, OrderSide::Buy, OrderType::Limit, None, None);
+    let (order, trades) = book.add_order(
+        user_id,
+        price,
+        qty,
+        OrderSide::Buy,
+        OrderType::Limit,
+        None,
+        None,
+    );
 
     assert!(trades.is_empty());
     assert_eq!(order.quantity, qty);
@@ -40,12 +48,27 @@ fn full_fill_buy() {
     let price = scale_price(50_000);
     let qty = 10u64;
 
-    let (sell_order, sell_trades) =
-        book.add_order(seller, price, qty, OrderSide::Sell, OrderType::Limit, None, None);
+    let (sell_order, sell_trades) = book.add_order(
+        seller,
+        price,
+        qty,
+        OrderSide::Sell,
+        OrderType::Limit,
+        None,
+        None,
+    );
     assert!(sell_trades.is_empty());
     assert_eq!(sell_order.quantity, qty);
 
-    let (buy_order, buy_trades) = book.add_order(buyer, price, qty, OrderSide::Buy, OrderType::Limit, None, None);
+    let (buy_order, buy_trades) = book.add_order(
+        buyer,
+        price,
+        qty,
+        OrderSide::Buy,
+        OrderType::Limit,
+        None,
+        None,
+    );
     assert_eq!(buy_trades.len(), 1);
     assert_eq!(buy_trades[0].price, price);
     assert_eq!(buy_trades[0].quantity, qty);
@@ -64,11 +87,26 @@ fn full_fill_sell() {
     let price = scale_price(50_000);
     let qty = 10u64;
 
-    let (_buy_order, buy_trades) = book.add_order(buyer, price, qty, OrderSide::Buy, OrderType::Limit, None, None);
+    let (_buy_order, buy_trades) = book.add_order(
+        buyer,
+        price,
+        qty,
+        OrderSide::Buy,
+        OrderType::Limit,
+        None,
+        None,
+    );
     assert!(buy_trades.is_empty());
 
-    let (sell_order, sell_trades) =
-        book.add_order(seller, price, qty, OrderSide::Sell, OrderType::Limit, None, None);
+    let (sell_order, sell_trades) = book.add_order(
+        seller,
+        price,
+        qty,
+        OrderSide::Sell,
+        OrderType::Limit,
+        None,
+        None,
+    );
     assert_eq!(sell_trades.len(), 1);
     assert_eq!(sell_trades[0].quantity, qty);
     assert_eq!(sell_order.quantity, 0);
@@ -85,9 +123,24 @@ fn partial_fill() {
     let buyer = Uuid::new_v4();
     let price = scale_price(50_000);
 
-    let (sell_order, _) = book.add_order(seller, price, 10, OrderSide::Sell, OrderType::Limit, None, None);
-    let (buy_order, buy_trades) =
-        book.add_order(buyer, price, 4, OrderSide::Buy, OrderType::Limit, None, None);
+    let (sell_order, _) = book.add_order(
+        seller,
+        price,
+        10,
+        OrderSide::Sell,
+        OrderType::Limit,
+        None,
+        None,
+    );
+    let (buy_order, buy_trades) = book.add_order(
+        buyer,
+        price,
+        4,
+        OrderSide::Buy,
+        OrderType::Limit,
+        None,
+        None,
+    );
 
     assert_eq!(buy_trades.len(), 1);
     assert_eq!(buy_trades[0].quantity, 4);
@@ -109,10 +162,34 @@ fn multiple_price_levels_fifo() {
     let buyer = Uuid::new_v4();
     let price = scale_price(50_000);
 
-    let (sell1, _) = book.add_order(user1, price, 2, OrderSide::Sell, OrderType::Limit, None, None);
-    let (sell2, _) = book.add_order(user2, price, 2, OrderSide::Sell, OrderType::Limit, None, None);
+    let (sell1, _) = book.add_order(
+        user1,
+        price,
+        2,
+        OrderSide::Sell,
+        OrderType::Limit,
+        None,
+        None,
+    );
+    let (sell2, _) = book.add_order(
+        user2,
+        price,
+        2,
+        OrderSide::Sell,
+        OrderType::Limit,
+        None,
+        None,
+    );
 
-    let (buy_order, trades) = book.add_order(buyer, price, 3, OrderSide::Buy, OrderType::Limit, None, None);
+    let (buy_order, trades) = book.add_order(
+        buyer,
+        price,
+        3,
+        OrderSide::Buy,
+        OrderType::Limit,
+        None,
+        None,
+    );
 
     assert_eq!(trades.len(), 2);
     assert_eq!(trades[0].quantity, 2);
@@ -156,8 +233,24 @@ fn create_match_full_fill_both_filled() {
     let price = scale_price(50_000);
     let qty = 10u64;
 
-    let (sell_order, _) = book.add_order(seller, price, qty, OrderSide::Sell, OrderType::Limit, None, None);
-    let (buy_order, trades) = book.add_order(buyer, price, qty, OrderSide::Buy, OrderType::Limit, None, None);
+    let (sell_order, _) = book.add_order(
+        seller,
+        price,
+        qty,
+        OrderSide::Sell,
+        OrderType::Limit,
+        None,
+        None,
+    );
+    let (buy_order, trades) = book.add_order(
+        buyer,
+        price,
+        qty,
+        OrderSide::Buy,
+        OrderType::Limit,
+        None,
+        None,
+    );
 
     assert_eq!(trades.len(), 1);
     assert_eq!(trades[0].price, price);
@@ -176,8 +269,24 @@ fn create_match_partial_fill_remainder_on_book() {
     let buyer = Uuid::new_v4();
     let price = scale_price(50_000);
 
-    let (sell_order, _) = book.add_order(seller, price, 10, OrderSide::Sell, OrderType::Limit, None, None);
-    book.add_order(buyer, price, 4, OrderSide::Buy, OrderType::Limit, None, None);
+    let (sell_order, _) = book.add_order(
+        seller,
+        price,
+        10,
+        OrderSide::Sell,
+        OrderType::Limit,
+        None,
+        None,
+    );
+    book.add_order(
+        buyer,
+        price,
+        4,
+        OrderSide::Buy,
+        OrderType::Limit,
+        None,
+        None,
+    );
 
     let resting = book.get_order_by_id(sell_order.id).unwrap();
     assert_eq!(resting.quantity, 6);
@@ -246,8 +355,24 @@ fn partial_fill_resting_fully_filled_incoming_rests() {
     let buyer = Uuid::new_v4();
     let price = scale_price(50_000);
 
-    let (sell_order, _) = book.add_order(seller, price, 5, OrderSide::Sell, OrderType::Limit, None, None);
-    let (buy_order, trades) = book.add_order(buyer, price, 10, OrderSide::Buy, OrderType::Limit, None, None);
+    let (sell_order, _) = book.add_order(
+        seller,
+        price,
+        5,
+        OrderSide::Sell,
+        OrderType::Limit,
+        None,
+        None,
+    );
+    let (buy_order, trades) = book.add_order(
+        buyer,
+        price,
+        10,
+        OrderSide::Buy,
+        OrderType::Limit,
+        None,
+        None,
+    );
 
     assert_eq!(trades.len(), 1);
     assert_eq!(trades[0].quantity, 5);
@@ -269,16 +394,17 @@ fn market_buy_with_liquidity_full_fill() {
     let price = scale_price(50_000);
     let qty = 10u64;
 
-    book.add_order(seller, price, qty, OrderSide::Sell, OrderType::Limit, None, None);
-    let (buy_order, trades) = book.add_order(
-        buyer,
-        0,
+    book.add_order(
+        seller,
+        price,
         qty,
-        OrderSide::Buy,
-        OrderType::Market,
+        OrderSide::Sell,
+        OrderType::Limit,
         None,
         None,
     );
+    let (buy_order, trades) =
+        book.add_order(buyer, 0, qty, OrderSide::Buy, OrderType::Market, None, None);
 
     assert_eq!(trades.len(), 1);
     assert_eq!(trades[0].price, price);
@@ -295,16 +421,17 @@ fn market_buy_partial_fill_does_not_rest() {
     let buyer = Uuid::new_v4();
     let price = scale_price(50_000);
 
-    book.add_order(seller, price, 3, OrderSide::Sell, OrderType::Limit, None, None);
-    let (buy_order, trades) = book.add_order(
-        buyer,
-        0,
-        10,
-        OrderSide::Buy,
-        OrderType::Market,
+    book.add_order(
+        seller,
+        price,
+        3,
+        OrderSide::Sell,
+        OrderType::Limit,
         None,
         None,
     );
+    let (buy_order, trades) =
+        book.add_order(buyer, 0, 10, OrderSide::Buy, OrderType::Market, None, None);
 
     assert_eq!(trades.len(), 1);
     assert_eq!(trades[0].quantity, 3);
@@ -319,15 +446,8 @@ fn market_buy_no_liquidity() {
     let buyer = Uuid::new_v4();
     let qty = 5u64;
 
-    let (order, trades) = book.add_order(
-        buyer,
-        0,
-        qty,
-        OrderSide::Buy,
-        OrderType::Market,
-        None,
-        None,
-    );
+    let (order, trades) =
+        book.add_order(buyer, 0, qty, OrderSide::Buy, OrderType::Market, None, None);
 
     assert!(trades.is_empty());
     assert_eq!(order.quantity, qty);
@@ -343,7 +463,15 @@ fn market_sell_with_liquidity_full_fill() {
     let price = scale_price(50_000);
     let qty = 10u64;
 
-    book.add_order(buyer, price, qty, OrderSide::Buy, OrderType::Limit, None, None);
+    book.add_order(
+        buyer,
+        price,
+        qty,
+        OrderSide::Buy,
+        OrderType::Limit,
+        None,
+        None,
+    );
     let (sell_order, trades) = book.add_order(
         seller,
         0,
@@ -369,7 +497,15 @@ fn market_sell_partial_fill_does_not_rest() {
     let seller = Uuid::new_v4();
     let price = scale_price(50_000);
 
-    book.add_order(buyer, price, 3, OrderSide::Buy, OrderType::Limit, None, None);
+    book.add_order(
+        buyer,
+        price,
+        3,
+        OrderSide::Buy,
+        OrderType::Limit,
+        None,
+        None,
+    );
     let (sell_order, trades) = book.add_order(
         seller,
         0,
@@ -421,8 +557,24 @@ async fn trade_broadcast_on_match() {
     let price = scale_price(50_000);
     let qty = 10u64;
 
-    book.add_order(seller, price, qty, OrderSide::Sell, OrderType::Limit, None, None);
-    book.add_order(buyer, price, qty, OrderSide::Buy, OrderType::Limit, Some(&tx), Some(SYMBOL));
+    book.add_order(
+        seller,
+        price,
+        qty,
+        OrderSide::Sell,
+        OrderType::Limit,
+        None,
+        None,
+    );
+    book.add_order(
+        buyer,
+        price,
+        qty,
+        OrderSide::Buy,
+        OrderType::Limit,
+        Some(&tx),
+        Some(SYMBOL),
+    );
 
     let msg = tokio::time::timeout(Duration::from_millis(100), rx.recv())
         .await
@@ -448,8 +600,24 @@ async fn orderbook_update_broadcast_after_trade() {
     let price = scale_price(50_000);
     let qty = 10u64;
 
-    book.add_order(seller, price, qty, OrderSide::Sell, OrderType::Limit, Some(&tx), Some(SYMBOL));
-    book.add_order(buyer, price, qty, OrderSide::Buy, OrderType::Limit, Some(&tx), Some(SYMBOL));
+    book.add_order(
+        seller,
+        price,
+        qty,
+        OrderSide::Sell,
+        OrderType::Limit,
+        Some(&tx),
+        Some(SYMBOL),
+    );
+    book.add_order(
+        buyer,
+        price,
+        qty,
+        OrderSide::Buy,
+        OrderType::Limit,
+        Some(&tx),
+        Some(SYMBOL),
+    );
 
     let mut seen_trade = false;
     let mut seen_empty_ob = false;

@@ -1,6 +1,6 @@
 //! Position tracking integration tests: update_position, get_positions, unrealized_pnl.
 
-use rust_exchange::positions::{get_positions, unrealized_pnl, update_position, SharedPositions};
+use rust_exchange::positions::{SharedPositions, get_positions, unrealized_pnl, update_position};
 use rust_exchange::types::order::OrderSide;
 use std::collections::HashMap;
 use std::sync::Arc;
