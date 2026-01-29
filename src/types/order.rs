@@ -12,8 +12,9 @@ pub enum OrderSide {
     Sell,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
 pub enum OrderType {
+    #[default]
     Limit,
     Market,
 }

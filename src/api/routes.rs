@@ -13,7 +13,7 @@ use uuid::Uuid;
 use crate::api::ws::ws_handler;
 use crate::orderbook::orderbook::SharedOrderBook;
 use crate::positions::{self, SharedPositions};
-use crate::types::order::{Order, OrderSide};
+use crate::types::order::{Order, OrderSide, OrderType};
 use crate::types::position::Position;
 use crate::types::trade::Trade;
 
@@ -88,6 +88,8 @@ struct CreateOrderRequest {
     price: i64,
     quantity: u64,
     side: OrderSide,
+    #[serde(default)]
+    order_type: OrderType,
 }
 
 async fn create_order(
@@ -110,10 +112,18 @@ async fn create_order(
             body.price,
             body.quantity,
             body.side,
+            body.order_type,
             Some(&state.ws_channel),
             Some(&normalized_symbol),
         )
     };
+
+    if body.order_type == OrderType::Market && trades.is_empty() {
+        return Err(ErrorResponse::new(
+            "Market order could not be filled: no liquidity".to_string(),
+            StatusCode::BAD_REQUEST,
+        ));
+    }
 
     // Update positions for each trade (taker = order.side, maker = opposite)
     let maker_side = match order.side {

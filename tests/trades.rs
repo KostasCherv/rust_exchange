@@ -1,7 +1,7 @@
 //! Trade creation and structure integration tests: add_order trades, get_recent_trades, trade fields.
 
 use rust_exchange::orderbook::orderbook::OrderBook;
-use rust_exchange::types::order::OrderSide;
+use rust_exchange::types::order::{OrderSide, OrderType};
 use uuid::Uuid;
 
 fn scale_price(p: i64) -> i64 {
@@ -16,8 +16,8 @@ fn trade_creation_on_match_fields() {
     let price = scale_price(50_000);
     let qty = 10u64;
 
-    let (sell_order, _) = book.add_order(seller, price, qty, OrderSide::Sell, None, None);
-    let (buy_order, trades) = book.add_order(buyer, price, qty, OrderSide::Buy, None, None);
+    let (sell_order, _) = book.add_order(seller, price, qty, OrderSide::Sell, OrderType::Limit, None, None);
+    let (buy_order, trades) = book.add_order(buyer, price, qty, OrderSide::Buy, OrderType::Limit, None, None);
 
     assert_eq!(trades.len(), 1);
     let t = &trades[0];
@@ -37,9 +37,9 @@ fn multiple_trades_fifo_recent_first() {
     let buyer = Uuid::new_v4();
     let price = scale_price(50_000);
 
-    let (sell1, _) = book.add_order(user1, price, 2, OrderSide::Sell, None, None);
-    let (sell2, _) = book.add_order(user2, price, 2, OrderSide::Sell, None, None);
-    let (_buy_order, trades) = book.add_order(buyer, price, 3, OrderSide::Buy, None, None);
+    let (sell1, _) = book.add_order(user1, price, 2, OrderSide::Sell, OrderType::Limit, None, None);
+    let (sell2, _) = book.add_order(user2, price, 2, OrderSide::Sell, OrderType::Limit, None, None);
+    let (_buy_order, trades) = book.add_order(buyer, price, 3, OrderSide::Buy, OrderType::Limit, None, None);
 
     assert_eq!(trades.len(), 2);
     assert_eq!(trades[0].quantity, 2);
@@ -61,8 +61,8 @@ fn trade_storage_after_match() {
     let price = scale_price(50_000);
     let qty = 5u64;
 
-    let (sell_order, _) = book.add_order(seller, price, qty, OrderSide::Sell, None, None);
-    let (buy_order, trades) = book.add_order(buyer, price, qty, OrderSide::Buy, None, None);
+    let (sell_order, _) = book.add_order(seller, price, qty, OrderSide::Sell, OrderType::Limit, None, None);
+    let (buy_order, trades) = book.add_order(buyer, price, qty, OrderSide::Buy, OrderType::Limit, None, None);
 
     assert_eq!(trades.len(), 1);
     let stored = book.get_all_trades();

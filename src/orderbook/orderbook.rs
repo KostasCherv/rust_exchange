@@ -36,12 +36,14 @@ impl OrderBook {
         }
     }
 
+    #[allow(clippy::too_many_arguments)]
     pub fn add_order(
         &mut self,
         user_id: Uuid,
         price: Price,
         qty: Qty,
         side: OrderSide,
+        order_type: OrderType,
         ws_channel: Option<&broadcast::Sender<crate::api::routes::WsMessage>>,
         symbol: Option<&str>,
     ) -> (Order, Vec<Trade>) {
@@ -50,7 +52,7 @@ impl OrderBook {
             id: Uuid::new_v4(),
             user_id,
             side,
-            order_type: OrderType::Limit, // Default to Limit for now
+            order_type,
             price,
             quantity: qty,
             status: OrderStatus::Pending,
@@ -68,8 +70,8 @@ impl OrderBook {
             crate::api::ws::broadcast_trades(channel, sym, &trades);
         }
 
-        // If there's remaining quantity, add it to the book
-        if matched_order.quantity > 0 {
+        // If there's remaining quantity, add it to the book (limit orders only; market orders do not rest)
+        if matched_order.quantity > 0 && matched_order.order_type == OrderType::Limit {
             let order_id = matched_order.id;
 
             // Store order in lookup map
@@ -166,8 +168,8 @@ impl OrderBook {
                 None => break, // No more asks to match
             };
 
-            // Check if buy order can match (buy price must be >= ask price)
-            if order.price < ask_price {
+            // Check if buy order can match (limit: buy price must be >= ask price; market: no price check)
+            if order.order_type != OrderType::Market && order.price < ask_price {
                 break; // Can't match, price too low
             }
 
@@ -250,8 +252,8 @@ impl OrderBook {
                 None => break, // No more bids to match
             };
 
-            // Check if sell order can match (sell price must be <= bid price)
-            if order.price > bid_price {
+            // Check if sell order can match (limit: sell price must be <= bid price; market: no price check)
+            if order.order_type != OrderType::Market && order.price > bid_price {
                 break; // Can't match, price too low
             }
 
