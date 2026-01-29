@@ -9,6 +9,8 @@ pub struct Trade {
     pub id: Uuid,
     pub maker_order_id: Uuid,
     pub taker_order_id: Uuid,
+    pub maker_user_id: Uuid,
+    pub taker_user_id: Uuid,
     pub price: Price,
     pub quantity: Qty,
     pub timestamp: DateTime<Utc>,

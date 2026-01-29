@@ -12,7 +12,9 @@ use uuid::Uuid;
 
 use crate::api::ws::ws_handler;
 use crate::orderbook::orderbook::SharedOrderBook;
+use crate::positions::{self, SharedPositions};
 use crate::types::order::{Order, OrderSide};
+use crate::types::position::Position;
 use crate::types::trade::Trade;
 
 // WebSocket message type for broadcasting
@@ -35,6 +37,7 @@ pub enum WsMessage {
 pub struct AppState {
     pub orderbooks: HashMap<String, SharedOrderBook>,
     pub ws_channel: broadcast::Sender<WsMessage>,
+    pub positions: SharedPositions,
 }
 
 // Error response structure
@@ -100,15 +103,43 @@ async fn create_order(
 
     let normalized_symbol = body.symbol.to_uppercase();
     let orderbook = get_orderbook(&state, &normalized_symbol)?;
-    let mut book = orderbook.write().await;
-    let order = book.add_order(
-        body.user_id,
-        body.price,
-        body.quantity,
-        body.side,
-        Some(&state.ws_channel),
-        Some(&normalized_symbol),
-    );
+    let (order, trades) = {
+        let mut book = orderbook.write().await;
+        book.add_order(
+            body.user_id,
+            body.price,
+            body.quantity,
+            body.side,
+            Some(&state.ws_channel),
+            Some(&normalized_symbol),
+        )
+    };
+
+    // Update positions for each trade (taker = order.side, maker = opposite)
+    let maker_side = match order.side {
+        OrderSide::Buy => OrderSide::Sell,
+        OrderSide::Sell => OrderSide::Buy,
+    };
+    for trade in &trades {
+        positions::update_position(
+            &state.positions,
+            trade.maker_user_id,
+            &normalized_symbol,
+            maker_side,
+            trade.price,
+            trade.quantity,
+        )
+        .await;
+        positions::update_position(
+            &state.positions,
+            trade.taker_user_id,
+            &normalized_symbol,
+            order.side,
+            trade.price,
+            trade.quantity,
+        )
+        .await;
+    }
 
     Ok(Json(order))
 }
@@ -218,6 +249,21 @@ async fn get_trades(
     Ok(Json(book.get_recent_trades(limit)))
 }
 
+#[derive(Deserialize)]
+struct PositionsQuery {
+    user_id: Uuid,
+    symbol: Option<String>,
+}
+
+async fn get_positions(
+    State(state): State<AppState>,
+    Query(params): Query<PositionsQuery>,
+) -> Result<Json<Vec<Position>>, (StatusCode, Json<ErrorResponse>)> {
+    let positions =
+        positions::get_positions(&state.positions, params.user_id, params.symbol.as_deref()).await;
+    Ok(Json(positions))
+}
+
 pub fn app_router(state: AppState) -> Router {
     Router::new()
         .route("/health", get(health))
@@ -226,6 +272,7 @@ pub fn app_router(state: AppState) -> Router {
         .route("/orders/{id}", get(get_order))
         .route("/book", get(get_order_book))
         .route("/trades", get(get_trades))
+        .route("/positions", get(get_positions))
         .route("/ws", get(ws_handler))
         .with_state(state)
 }

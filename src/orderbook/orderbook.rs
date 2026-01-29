@@ -44,7 +44,7 @@ impl OrderBook {
         side: OrderSide,
         ws_channel: Option<&broadcast::Sender<crate::api::routes::WsMessage>>,
         symbol: Option<&str>,
-    ) -> Order {
+    ) -> (Order, Vec<Trade>) {
         // Create the order
         let order = Order {
             id: Uuid::new_v4(),
@@ -98,7 +98,7 @@ impl OrderBook {
             crate::api::ws::broadcast_orderbook_update(channel, sym, self);
         }
 
-        matched_order
+        (matched_order, trades)
     }
 
     pub fn best_bid(&self) -> Option<Price> {
@@ -183,8 +183,14 @@ impl OrderBook {
                         let match_qty = order.quantity.min(maker_order.quantity);
 
                         // Create trade (maker price = ask price)
-                        let trade =
-                            Self::create_trade(maker_order_id, order.id, ask_price, match_qty);
+                        let trade = Self::create_trade(
+                            maker_order_id,
+                            order.id,
+                            maker_order.user_id,
+                            order.user_id,
+                            ask_price,
+                            match_qty,
+                        );
                         trades.push(trade);
 
                         // Update incoming order quantity
@@ -261,8 +267,14 @@ impl OrderBook {
                         let match_qty = order.quantity.min(maker_order.quantity);
 
                         // Create trade (maker price = bid price)
-                        let trade =
-                            Self::create_trade(maker_order_id, order.id, bid_price, match_qty);
+                        let trade = Self::create_trade(
+                            maker_order_id,
+                            order.id,
+                            maker_order.user_id,
+                            order.user_id,
+                            bid_price,
+                            match_qty,
+                        );
                         trades.push(trade);
 
                         // Update incoming order quantity
@@ -382,6 +394,8 @@ impl OrderBook {
     fn create_trade(
         maker_order_id: OrderId,
         taker_order_id: OrderId,
+        maker_user_id: Uuid,
+        taker_user_id: Uuid,
         price: Price,
         qty: Qty,
     ) -> Trade {
@@ -389,6 +403,8 @@ impl OrderBook {
             id: Uuid::new_v4(),
             maker_order_id,
             taker_order_id,
+            maker_user_id,
+            taker_user_id,
             price,
             quantity: qty,
             timestamp: Utc::now(),

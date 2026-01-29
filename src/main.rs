@@ -1,5 +1,6 @@
 use rust_exchange::api::routes::{AppState, app_router};
 use rust_exchange::orderbook::orderbook::{OrderBook, SharedOrderBook};
+use rust_exchange::positions::SharedPositions;
 use std::collections::HashMap;
 use std::sync::Arc;
 use tokio::sync::{RwLock, broadcast};
@@ -23,9 +24,12 @@ async fn main() {
     // Initialize WebSocket broadcast channel
     let (ws_tx, _) = broadcast::channel::<rust_exchange::api::routes::WsMessage>(1000);
 
+    let positions: SharedPositions = Arc::new(RwLock::new(HashMap::new()));
+
     let app_state = AppState {
         orderbooks,
         ws_channel: ws_tx,
+        positions,
     };
 
     let app = app_router(app_state);
