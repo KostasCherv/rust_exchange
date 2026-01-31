@@ -1,5 +1,5 @@
 use rust_exchange::api::auth::AuthUserCredential;
-use rust_exchange::api::routes::{AppState, app_router};
+use rust_exchange::api::routes::{AppState, UserStore, app_router};
 use rust_exchange::orderbook::orderbook::{OrderBook, SharedOrderBook};
 use rust_exchange::positions::SharedPositions;
 use std::collections::HashMap;
@@ -47,13 +47,19 @@ async fn main() {
         .into_bytes();
 
     let auth_users = load_auth_config();
+    let user_store: UserStore = Arc::new(RwLock::new(
+        auth_users
+            .into_iter()
+            .map(|cred| (cred.username.to_lowercase(), cred))
+            .collect(),
+    ));
 
     let app_state = AppState {
         orderbooks,
         ws_channel: ws_tx,
         positions,
         jwt_secret,
-        auth_users,
+        user_store,
     };
 
     let app = app_router(app_state);

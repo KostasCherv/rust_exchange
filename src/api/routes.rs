@@ -8,7 +8,8 @@ use axum::{
 };
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
-use tokio::sync::broadcast;
+use std::sync::Arc;
+use tokio::sync::{broadcast, RwLock};
 use uuid::Uuid;
 
 use crate::api::auth::{self, AuthUser, AuthUserCredential};
@@ -34,6 +35,9 @@ pub enum WsMessage {
     },
 }
 
+/// In-memory user store keyed by lowercase username.
+pub type UserStore = Arc<RwLock<HashMap<String, AuthUserCredential>>>;
+
 // Application state containing all shared resources
 #[derive(Clone)]
 pub struct AppState {
@@ -41,7 +45,7 @@ pub struct AppState {
     pub ws_channel: broadcast::Sender<WsMessage>,
     pub positions: SharedPositions,
     pub jwt_secret: Vec<u8>,
-    pub auth_users: Vec<AuthUserCredential>,
+    pub user_store: UserStore,
 }
 
 // Error response structure
@@ -121,20 +125,66 @@ async fn health() -> &'static str {
     "healthy"
 }
 
+#[derive(Deserialize)]
+struct RegisterRequest {
+    username: String,
+    password: String,
+}
+
+#[derive(Serialize)]
+struct RegisterResponse {
+    user_id: Uuid,
+    username: String,
+}
+
+async fn register(
+    State(state): State<AppState>,
+    Json(body): Json<RegisterRequest>,
+) -> Result<(StatusCode, Json<RegisterResponse>), (StatusCode, Json<ErrorResponse>)> {
+    let username = body.username.trim();
+    let password = body.password.trim();
+    if username.is_empty() || password.is_empty() {
+        return Err(ErrorResponse::new(
+            "Username and password are required".to_string(),
+            StatusCode::BAD_REQUEST,
+        ));
+    }
+    let key = username.to_lowercase();
+    let mut store = state.user_store.write().await;
+    if store.get(&key).is_some() {
+        return Err(ErrorResponse::new(
+            "Username already taken".to_string(),
+            StatusCode::BAD_REQUEST,
+        ));
+    }
+    let user_id = Uuid::new_v4();
+    let credential = AuthUserCredential {
+        user_id,
+        username: username.to_string(),
+        password: body.password,
+    };
+    store.insert(key, credential);
+    Ok((
+        StatusCode::CREATED,
+        Json(RegisterResponse {
+            user_id,
+            username: username.to_string(),
+        }),
+    ))
+}
+
 async fn login(
     State(state): State<AppState>,
     Json(body): Json<LoginRequest>,
 ) -> Result<Json<LoginResponse>, (StatusCode, Json<ErrorResponse>)> {
-    let cred = state
-        .auth_users
-        .iter()
-        .find(|c| c.username == body.username)
-        .ok_or_else(|| {
-            ErrorResponse::new(
-                "Invalid username or password".to_string(),
-                StatusCode::UNAUTHORIZED,
-            )
-        })?;
+    let key = body.username.trim().to_lowercase();
+    let store = state.user_store.read().await;
+    let cred = store.get(&key).ok_or_else(|| {
+        ErrorResponse::new(
+            "Invalid username or password".to_string(),
+            StatusCode::UNAUTHORIZED,
+        )
+    })?;
     if !auth::constant_time_eq(&body.password, &cred.password) {
         return Err(ErrorResponse::new(
             "Invalid username or password".to_string(),
@@ -384,6 +434,7 @@ async fn get_positions(
 pub fn app_router(state: AppState) -> Router {
     Router::new()
         .route("/health", get(health))
+        .route("/auth/register", post(register))
         .route("/auth/login", post(login))
         .route("/orders", post(create_order))
         .route("/orders/{id}", delete(cancel_order))
