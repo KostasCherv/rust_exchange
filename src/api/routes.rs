@@ -397,6 +397,48 @@ struct TradesQuery {
     limit: Option<usize>,
 }
 
+#[derive(Deserialize)]
+struct TradesMeQuery {
+    symbol: Option<String>,
+    limit: Option<usize>,
+}
+
+async fn get_trades_me(
+    auth: AuthUser,
+    State(state): State<AppState>,
+    Query(params): Query<TradesMeQuery>,
+) -> Result<Json<Vec<Trade>>, (StatusCode, Json<ErrorResponse>)> {
+    let limit = params.limit.unwrap_or(100);
+    let user_id = auth.user_id;
+
+    let symbol_opt = params
+        .symbol
+        .as_deref()
+        .map(|s| s.trim())
+        .filter(|s| !s.is_empty());
+
+    let trades: Vec<Trade> = if let Some(symbol) = symbol_opt {
+        let orderbook = get_orderbook(&state, symbol)?;
+        let book = orderbook.read().await;
+        book.get_recent_trades(limit)
+    } else {
+        let mut all = Vec::new();
+        for orderbook in state.orderbooks.values() {
+            let book = orderbook.read().await;
+            all.extend(book.get_recent_trades(limit));
+        }
+        all
+    };
+
+    let mut filtered: Vec<Trade> = trades
+        .into_iter()
+        .filter(|t| t.maker_user_id == user_id || t.taker_user_id == user_id)
+        .collect();
+    filtered.sort_by(|a, b| b.timestamp.cmp(&a.timestamp));
+    filtered.truncate(limit);
+    Ok(Json(filtered))
+}
+
 async fn get_trades(
     auth: AuthUser,
     State(state): State<AppState>,
@@ -440,6 +482,7 @@ pub fn app_router(state: AppState) -> Router {
         .route("/orders/{id}", delete(cancel_order))
         .route("/orders/{id}", get(get_order))
         .route("/book", get(get_order_book))
+        .route("/trades/me", get(get_trades_me))
         .route("/trades", get(get_trades))
         .route("/positions", get(get_positions))
         .route("/ws", get(ws_handler))
