@@ -154,6 +154,31 @@ impl OrderBook {
         self.orders.get(&order_id).cloned()
     }
 
+    /// Restore an open order into the book without matching (for hydration from DB).
+    /// Call only for Pending/PartiallyFilled Limit orders.
+    pub fn restore_order(&mut self, order: Order) {
+        if order.quantity == 0 {
+            return;
+        }
+        if order.order_type != OrderType::Limit {
+            return;
+        }
+        let order_id = order.id;
+        self.orders.insert(order_id, order.clone());
+        match order.side {
+            OrderSide::Buy => self
+                .bids
+                .entry(order.price)
+                .or_default()
+                .push_back(order_id),
+            OrderSide::Sell => self
+                .asks
+                .entry(order.price)
+                .or_default()
+                .push_back(order_id),
+        }
+    }
+
     // Match a buy order against asks
     // Iterate through asks from lowest price, match until order filled or no more matches
     pub fn match_buy_order(&mut self, order: &mut Order) -> Vec<Trade> {

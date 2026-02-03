@@ -15,8 +15,9 @@ use uuid::Uuid;
 use crate::api::auth::{self, AuthUser, AuthUserCredential};
 use crate::api::ws::ws_handler;
 use crate::orderbook::orderbook::SharedOrderBook;
+use crate::persistence;
 use crate::positions::{self, SharedPositions};
-use crate::types::order::{Order, OrderSide, OrderType};
+use crate::types::order::{Order, OrderSide, OrderStatus, OrderType};
 use crate::types::position::Position;
 use crate::types::trade::Trade;
 
@@ -46,6 +47,7 @@ pub struct AppState {
     pub positions: SharedPositions,
     pub jwt_secret: Vec<u8>,
     pub user_store: UserStore,
+    pub db: Option<sqlx::PgPool>,
 }
 
 // Error response structure
@@ -157,11 +159,27 @@ async fn register(
             StatusCode::BAD_REQUEST,
         ));
     }
+    let password_hash = auth::hash_password(password).map_err(|_| {
+        ErrorResponse::new(
+            "Failed to hash password".to_string(),
+            StatusCode::INTERNAL_SERVER_ERROR,
+        )
+    })?;
     let user_id = Uuid::new_v4();
+    if let Some(ref db) = state.db {
+        persistence::insert_user(db, user_id, &key, &password_hash)
+            .await
+            .map_err(|_| {
+                ErrorResponse::new(
+                    "Failed to create user".to_string(),
+                    StatusCode::INTERNAL_SERVER_ERROR,
+                )
+            })?;
+    }
     let credential = AuthUserCredential {
         user_id,
         username: username.to_string(),
-        password: body.password,
+        password_hash,
     };
     store.insert(key, credential);
     Ok((
@@ -178,20 +196,43 @@ async fn login(
     Json(body): Json<LoginRequest>,
 ) -> Result<Json<LoginResponse>, (StatusCode, Json<ErrorResponse>)> {
     let key = body.username.trim().to_lowercase();
-    let store = state.user_store.read().await;
-    let cred = store.get(&key).ok_or_else(|| {
-        ErrorResponse::new(
-            "Invalid username or password".to_string(),
-            StatusCode::UNAUTHORIZED,
-        )
-    })?;
-    if !auth::constant_time_eq(&body.password, &cred.password) {
-        return Err(ErrorResponse::new(
-            "Invalid username or password".to_string(),
-            StatusCode::UNAUTHORIZED,
-        ));
-    }
-    let token = auth::create_token(&state.jwt_secret, cred.user_id).map_err(|_| {
+    let user_id = if let Some(ref db) = state.db {
+        let user_row = persistence::get_user_by_username(db, &key).await.map_err(|_| {
+            ErrorResponse::new(
+                "Failed to look up user".to_string(),
+                StatusCode::INTERNAL_SERVER_ERROR,
+            )
+        })?;
+        let user_row = user_row.ok_or_else(|| {
+            ErrorResponse::new(
+                "Invalid username or password".to_string(),
+                StatusCode::UNAUTHORIZED,
+            )
+        })?;
+        if !auth::verify_password(&body.password, &user_row.password_hash) {
+            return Err(ErrorResponse::new(
+                "Invalid username or password".to_string(),
+                StatusCode::UNAUTHORIZED,
+            ));
+        }
+        user_row.id
+    } else {
+        let store = state.user_store.read().await;
+        let cred = store.get(&key).ok_or_else(|| {
+            ErrorResponse::new(
+                "Invalid username or password".to_string(),
+                StatusCode::UNAUTHORIZED,
+            )
+        })?;
+        if !auth::verify_password(&body.password, &cred.password_hash) {
+            return Err(ErrorResponse::new(
+                "Invalid username or password".to_string(),
+                StatusCode::UNAUTHORIZED,
+            ));
+        }
+        cred.user_id
+    };
+    let token = auth::create_token(&state.jwt_secret, user_id).map_err(|_| {
         ErrorResponse::new(
             "Failed to create token".to_string(),
             StatusCode::INTERNAL_SERVER_ERROR,
@@ -199,7 +240,7 @@ async fn login(
     })?;
     Ok(Json(LoginResponse {
         token,
-        user_id: cred.user_id,
+        user_id,
     }))
 }
 
@@ -285,6 +326,57 @@ async fn create_order(
         .await;
     }
 
+    if let Some(ref db) = state.db {
+        let _ = persistence::insert_order(
+            db,
+            order.id,
+            order.user_id,
+            &normalized_symbol,
+            order.side,
+            order.order_type,
+            order.price,
+            order.quantity,
+            order.status,
+            order.timestamp,
+        )
+        .await;
+        for trade in &trades {
+            let _ = persistence::insert_trade(
+                db,
+                trade.id,
+                trade.maker_order_id,
+                trade.taker_order_id,
+                trade.maker_user_id,
+                trade.taker_user_id,
+                &normalized_symbol,
+                trade.price,
+                trade.quantity,
+                trade.timestamp,
+            )
+            .await;
+        }
+        let mut keys = std::collections::HashSet::new();
+        keys.insert((order.user_id, normalized_symbol.clone()));
+        for t in &trades {
+            keys.insert((t.maker_user_id, normalized_symbol.clone()));
+            keys.insert((t.taker_user_id, normalized_symbol.clone()));
+        }
+        for (uid, sym) in keys {
+            let pos_list =
+                positions::get_positions(&state.positions, uid, Some(&sym)).await;
+            if let Some(pos) = pos_list.into_iter().next() {
+                let _ = persistence::upsert_position(
+                    db,
+                    uid,
+                    &sym,
+                    pos.quantity,
+                    pos.average_price,
+                )
+                .await;
+            }
+        }
+    }
+
     Ok(Json(order))
 }
 
@@ -321,7 +413,12 @@ async fn cancel_order(
     }
     let mut book = orderbook.write().await;
     match book.remove_order(order_id, Some(&state.ws_channel), Some(&normalized_symbol)) {
-        Some(_) => Ok(StatusCode::NO_CONTENT),
+        Some(_) => {
+            if let Some(ref db) = state.db {
+                let _ = persistence::update_order_status(db, order_id, OrderStatus::Cancelled).await;
+            }
+            Ok(StatusCode::NO_CONTENT)
+        }
         None => Err(ErrorResponse::new(
             format!("Order '{}' not found", order_id),
             StatusCode::NOT_FOUND,
@@ -340,6 +437,34 @@ async fn get_order(
             "Symbol parameter is required".to_string(),
             StatusCode::BAD_REQUEST,
         ));
+    }
+
+    if let Some(ref db) = state.db {
+        let row = persistence::get_order_by_id(db, order_id).await.map_err(|_| {
+            ErrorResponse::new(
+                "Failed to look up order".to_string(),
+                StatusCode::INTERNAL_SERVER_ERROR,
+            )
+        })?;
+        let row = row.ok_or_else(|| {
+            ErrorResponse::new(
+                format!("Order '{}' not found", order_id),
+                StatusCode::NOT_FOUND,
+            )
+        })?;
+        if row.user_id != auth.user_id {
+            return Err(ErrorResponse::new(
+                "Forbidden: order does not belong to you".to_string(),
+                StatusCode::FORBIDDEN,
+            ));
+        }
+        let order = persistence::order_row_to_order_display(&row).ok_or_else(|| {
+            ErrorResponse::new(
+                "Invalid order data".to_string(),
+                StatusCode::INTERNAL_SERVER_ERROR,
+            )
+        })?;
+        return Ok(Json(order));
     }
 
     let orderbook = get_orderbook(&state, &params.symbol)?;
@@ -417,6 +542,18 @@ async fn get_trades_me(
         .map(|s| s.trim())
         .filter(|s| !s.is_empty());
 
+    if let Some(ref db) = state.db {
+        let trades = persistence::list_trades_for_user(db, user_id, symbol_opt, limit)
+            .await
+            .map_err(|_| {
+                ErrorResponse::new(
+                    "Failed to load trades".to_string(),
+                    StatusCode::INTERNAL_SERVER_ERROR,
+                )
+            })?;
+        return Ok(Json(trades));
+    }
+
     let trades: Vec<Trade> = if let Some(symbol) = symbol_opt {
         let orderbook = get_orderbook(&state, symbol)?;
         let book = orderbook.read().await;
@@ -452,9 +589,20 @@ async fn get_trades(
         ));
     }
 
+    let limit = params.limit.unwrap_or(100);
+
+    if let Some(ref db) = state.db {
+        let trades = persistence::list_trades(db, &params.symbol, limit).await.map_err(|_| {
+            ErrorResponse::new(
+                "Failed to load trades".to_string(),
+                StatusCode::INTERNAL_SERVER_ERROR,
+            )
+        })?;
+        return Ok(Json(trades));
+    }
+
     let orderbook = get_orderbook(&state, &params.symbol)?;
     let book = orderbook.read().await;
-    let limit = params.limit.unwrap_or(100);
     Ok(Json(book.get_recent_trades(limit)))
 }
 
@@ -468,6 +616,31 @@ async fn get_positions(
     State(state): State<AppState>,
     Query(params): Query<PositionsQuery>,
 ) -> Result<Json<Vec<Position>>, (StatusCode, Json<ErrorResponse>)> {
+    if let Some(ref db) = state.db {
+        let rows = persistence::list_positions_for_user(
+            db,
+            auth.user_id,
+            params.symbol.as_deref(),
+        )
+        .await
+        .map_err(|_| {
+            ErrorResponse::new(
+                "Failed to load positions".to_string(),
+                StatusCode::INTERNAL_SERVER_ERROR,
+            )
+        })?;
+        let positions = rows
+            .into_iter()
+            .map(|r| Position {
+                user_id: r.user_id,
+                symbol: r.symbol,
+                quantity: r.quantity,
+                average_price: r.average_price,
+            })
+            .collect();
+        return Ok(Json(positions));
+    }
+
     let positions =
         positions::get_positions(&state.positions, auth.user_id, params.symbol.as_deref()).await;
     Ok(Json(positions))

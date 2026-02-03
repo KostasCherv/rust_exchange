@@ -1,4 +1,6 @@
-use jsonwebtoken::{DecodingKey, EncodingKey, Header, Validation, decode, encode};
+use argon2::password_hash::{rand_core::OsRng, PasswordHash, PasswordHasher, PasswordVerifier, SaltString};
+use argon2::Argon2;
+use jsonwebtoken::{decode, encode, DecodingKey, EncodingKey, Header, Validation};
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
@@ -16,12 +18,12 @@ pub struct AuthUser {
     pub user_id: Uuid,
 }
 
-/// User credential for login validation (from env or config).
+/// User credential for login validation (from DB or in-memory). Holds only password hash.
 #[derive(Clone)]
 pub struct AuthUserCredential {
     pub user_id: Uuid,
     pub username: String,
-    pub password: String,
+    pub password_hash: String,
 }
 
 const JWT_EXPIRY_HOURS: i64 = 24;
@@ -54,16 +56,21 @@ pub fn decode_token(secret: &[u8], token: &str) -> Result<Claims, jsonwebtoken::
     Ok(token_data.claims)
 }
 
-/// Constant-time comparison for password check (MVP: plain env comparison).
-#[inline]
-pub fn constant_time_eq(a: &str, b: &str) -> bool {
-    let a = a.as_bytes();
-    let b = b.as_bytes();
-    if a.len() != b.len() {
-        return false;
-    }
-    a.iter()
-        .zip(b.iter())
-        .fold(0u8, |acc, (x, y)| acc | (x ^ y))
-        == 0
+/// Hash a plaintext password for storage. Uses Argon2.
+pub fn hash_password(plain: &str) -> Result<String, argon2::password_hash::Error> {
+    let salt = SaltString::generate(&mut OsRng);
+    let argon2 = Argon2::default();
+    let hash = argon2.hash_password(plain.as_bytes(), &salt)?;
+    Ok(hash.to_string())
+}
+
+/// Verify a plaintext password against a stored hash.
+pub fn verify_password(plain: &str, hash: &str) -> bool {
+    let parsed = match PasswordHash::new(hash) {
+        Ok(p) => p,
+        Err(_) => return false,
+    };
+    Argon2::default()
+        .verify_password(plain.as_bytes(), &parsed)
+        .is_ok()
 }

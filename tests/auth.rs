@@ -1,6 +1,6 @@
 //! Integration tests for auth: register, login, and user store.
 
-use rust_exchange::api::auth::AuthUserCredential;
+use rust_exchange::api::auth::{self, AuthUserCredential};
 use rust_exchange::api::routes::{AppState, UserStore, app_router};
 use rust_exchange::orderbook::orderbook::OrderBook;
 use rust_exchange::positions::SharedPositions;
@@ -24,6 +24,7 @@ fn test_app_state(user_store: UserStore) -> AppState {
         positions,
         jwt_secret,
         user_store,
+        db: None,
     }
 }
 
@@ -217,10 +218,11 @@ async fn login_unknown_user_returns_401() {
 #[tokio::test]
 async fn login_with_env_seeded_user() {
     let user_id = Uuid::new_v4();
+    let password_hash = auth::hash_password("envpass").unwrap();
     let cred = AuthUserCredential {
         user_id,
         username: "seeded".to_string(),
-        password: "envpass".to_string(),
+        password_hash,
     };
     let mut map = HashMap::new();
     map.insert("seeded".to_string(), cred);
